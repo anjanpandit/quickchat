@@ -1,0 +1,112 @@
+<!-- QuickChat: A Random Video Chat App -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QuickChat</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #0f172a;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    video {
+      width: 90vw;
+      max-width: 400px;
+      border: 4px solid #38bdf8;
+      border-radius: 16px;
+      margin: 10px;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      background: #38bdf8;
+      color: black;
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>QuickChat</h1>
+  <video id="localVideo" autoplay muted></video>
+  <video id="remoteVideo" autoplay></video>
+
+  <div class="controls">
+    <button onclick="startChat()">Start</button>
+    <button onclick="nextUser()">Next</button>
+  </div>
+
+  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+  <script>
+    const socket = io('https://YOUR-SERVER-URL'); // এখানে আপনার সার্ভার লিংক বসাবেন
+
+    let localStream;
+    let peerConn;
+
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+
+    async function startChat() {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localVideo.srcObject = localStream;
+      socket.emit('findPartner');
+    }
+
+    socket.on('partnerFound', (isCaller) => {
+      peerConn = new RTCPeerConnection();
+      localStream.getTracks().forEach(track => peerConn.addTrack(track, localStream));
+
+      peerConn.ontrack = event => {
+        remoteVideo.srcObject = event.streams[0];
+      };
+
+      peerConn.onicecandidate = e => {
+        if (e.candidate) socket.emit('ice', e.candidate);
+      };
+
+      if (isCaller) {
+        peerConn.createOffer().then(offer => {
+          peerConn.setLocalDescription(offer);
+          socket.emit('offer', offer);
+        });
+      }
+    });
+
+    socket.on('offer', offer => {
+      peerConn.setRemoteDescription(new RTCSessionDescription(offer));
+      peerConn.createAnswer().then(answer => {
+        peerConn.setLocalDescription(answer);
+        socket.emit('answer', answer);
+      });
+    });
+
+    socket.on('answer', answer => {
+      peerConn.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    socket.on('ice', candidate => {
+      peerConn.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+
+    function nextUser() {
+      if (peerConn) peerConn.close();
+      socket.emit('next');
+      startChat();
+    }
+  </script>
+</body>
+</html>
